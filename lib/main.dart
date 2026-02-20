@@ -154,57 +154,96 @@ class _LaneDetectionScreenState extends State<LaneDetectionScreen> {
   }
 
   Future<void> _processFrame(CameraImage image) async {
-    if (_isProcessing) return;
+    // Skip frames to avoid overwhelming the processor
+    _frameSkipCount++;
+    if (_frameSkipCount < _frameSkipInterval) {
+      return; // Skip this frame
+    }
+    _frameSkipCount = 0;
+
+    // Throttle processing rate
+    final now = DateTime.now();
+    if (_lastProcessTime != null) {
+      final timeSinceLastProcess = now.difference(_lastProcessTime!).inMilliseconds;
+      if (timeSinceLastProcess < _minProcessingIntervalMs) {
+        return; // Skip if processing too frequently
+      }
+    }
+
+    // Don't process if already processing or widget is disposed
+    if (_isProcessing || !mounted) return;
 
     _isProcessing = true;
+    _lastProcessTime = now;
     final startTime = DateTime.now();
 
     try {
-      final result = await LaneDetection.detectLanes(image);
+      // Process frame asynchronously to avoid blocking UI
+      final result = await Future.microtask(() => LaneDetection.detectLanes(image))
+          .timeout(
+        const Duration(seconds: 2),
+        onTimeout: () => LaneDetectionResult(lanesDetected: false),
+      );
+
       final processingTime = DateTime.now().difference(startTime).inMilliseconds.toDouble();
 
+      // Only update UI if widget is still mounted
+      if (!mounted) return;
+
+      // Batch UI updates to avoid excessive setState calls
+      final departureStatus = LaneDepartureWarningSystem.checkDeparture(result);
+      final steeringSuggestion = LaneDepartureWarningSystem.getSteeringSuggestion(result);
+
+      // Update performance metrics
+      _frameCount++;
+      _processingTimes.add(processingTime);
+      if (_processingTimes.length > 30) {
+        _processingTimes.removeAt(0);
+      }
+      _avgProcessingTime = _processingTimes.reduce((a, b) => a + b) / _processingTimes.length;
+
+      // Calculate FPS
+      final fpsNow = DateTime.now();
+      if (_lastFpsUpdate == null) {
+        _lastFpsUpdate = fpsNow;
+      } else {
+        final elapsed = fpsNow.difference(_lastFpsUpdate!).inSeconds;
+        if (elapsed >= 1) {
+          _currentFps = _frameCount / elapsed;
+          _frameCount = 0;
+          _lastFpsUpdate = fpsNow;
+        }
+      }
+
+      // Update dashboard data (don't call setState here)
+      widget.dashboardData.updateWithFrame(
+        lanesDetected: result.lanesDetected,
+        processingTime: processingTime,
+        fps: _currentFps > 0 ? _currentFps : 0.0,
+        result: result,
+        departureStatus: departureStatus,
+      );
+
+      // Update UI state
       if (mounted) {
         setState(() {
           _lastResult = result;
-          _departureStatus = LaneDepartureWarningSystem.checkDeparture(result);
-          _steeringSuggestion = LaneDepartureWarningSystem.getSteeringSuggestion(result);
-
-          // Update performance metrics
-          _frameCount++;
-          _processingTimes.add(processingTime);
-          if (_processingTimes.length > 30) {
-            _processingTimes.removeAt(0);
-          }
-          _avgProcessingTime = _processingTimes.reduce((a, b) => a + b) / _processingTimes.length;
-
-          // Calculate FPS
-          final now = DateTime.now();
-          if (_lastFpsUpdate == null) {
-            _lastFpsUpdate = now;
-          } else {
-            final elapsed = now.difference(_lastFpsUpdate!).inSeconds;
-            if (elapsed >= 1) {
-              _currentFps = _frameCount / elapsed;
-              _frameCount = 0;
-              _lastFpsUpdate = now;
-            }
-          }
-
-          // Update dashboard data
-          widget.dashboardData.updateWithFrame(
-            lanesDetected: result.lanesDetected,
-            processingTime: processingTime,
-            fps: _currentFps > 0 ? _currentFps : 0.0,
-            result: result,
-            departureStatus: _departureStatus,
-          );
-          
-          // Notify parent to update dashboard
-          widget.onDataUpdate();
+          _departureStatus = departureStatus;
+          _steeringSuggestion = steeringSuggestion;
         });
+        
+        // Notify parent to update dashboard (throttled)
+        widget.onDataUpdate();
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
       debugPrint('Error processing frame: $e');
+      debugPrint('Stack trace: $stackTrace');
+      
+      // Don't crash on processing errors, just log them
+      if (mounted) {
+        // Optionally show error to user (but don't spam)
+        debugPrint('Frame processing error handled gracefully');
+      }
     } finally {
       _isProcessing = false;
     }
@@ -527,8 +566,18 @@ class _LaneDetectionScreenState extends State<LaneDetectionScreen> {
 
   @override
   void dispose() {
-    _cameraService.stopImageStream();
-    _cameraService.dispose();
+    // Stop processing before disposing
+    _isProcessing = false;
+    
+    // Stop image stream and dispose camera service
+    _cameraService.stopImageStream().catchError((e) {
+      debugPrint('Error stopping image stream: $e');
+    });
+    
+    _cameraService.dispose().catchError((e) {
+      debugPrint('Error disposing camera service: $e');
+    });
+    
     super.dispose();
   }
 }

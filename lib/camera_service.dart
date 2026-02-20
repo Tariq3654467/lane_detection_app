@@ -1,5 +1,6 @@
 import 'package:camera/camera.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter/foundation.dart';
 import 'dart:async';
 
 class CameraService {
@@ -56,8 +57,20 @@ class CameraService {
       throw Exception('Camera not initialized');
     }
 
+    // Stop any existing stream first
+    try {
+      await _controller!.stopImageStream();
+    } catch (e) {
+      // Ignore errors if stream wasn't running
+    }
+
+    // Start image stream with error handling
     await _controller!.startImageStream((image) {
-      onImage(image);
+      try {
+        onImage(image);
+      } catch (e) {
+        debugPrint('Error in image stream callback: $e');
+      }
     });
   }
 
