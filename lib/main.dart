@@ -4,6 +4,8 @@ import 'package:camera/camera.dart';
 import 'camera_service.dart';
 import 'lane_detection.dart';
 import 'lane_departure_warning.dart';
+import 'dashboard_data.dart';
+import 'dashboard_screen.dart';
 
 void main() {
   runApp(const LaneDetectionApp());
@@ -48,9 +50,13 @@ class _LaneDetectionScreenState extends State<LaneDetectionScreen> {
   double _avgProcessingTime = 0.0;
   final List<double> _processingTimes = [];
 
+  // Dashboard data tracking
+  late DashboardData _dashboardData;
+
   @override
   void initState() {
     super.initState();
+    _dashboardData = DashboardData(sessionStartTime: DateTime.now());
     _initializeCamera();
   }
 
@@ -112,6 +118,15 @@ class _LaneDetectionScreenState extends State<LaneDetectionScreen> {
               _lastFpsUpdate = now;
             }
           }
+
+          // Update dashboard data
+          _dashboardData.updateWithFrame(
+            lanesDetected: result.lanesDetected,
+            processingTime: processingTime,
+            fps: _currentFps > 0 ? _currentFps : 0.0,
+            result: result,
+            departureStatus: _departureStatus,
+          );
         });
       }
     } catch (e) {
@@ -124,6 +139,18 @@ class _LaneDetectionScreenState extends State<LaneDetectionScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => DashboardScreen(data: _dashboardData.copy()),
+            ),
+          );
+        },
+        backgroundColor: Colors.blue.shade700,
+        child: const Icon(Icons.dashboard, color: Colors.white),
+      ),
       body: _controller == null || !_controller!.value.isInitialized
           ? const Center(
               child: Column(
