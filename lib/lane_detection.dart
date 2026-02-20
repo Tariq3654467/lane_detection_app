@@ -369,18 +369,36 @@ class LaneDetection {
     final rightX1 = ((y1 - rightLane.intercept) / rightLane.slope).round();
     final rightX2 = ((y2 - rightLane.intercept) / rightLane.slope).round();
 
-    final points = [
-      math.Point(leftX1.clamp(0, image.width), y1.clamp(0, image.height)),
-      math.Point(leftX2.clamp(0, image.width), y2.clamp(0, image.height)),
-      math.Point(rightX2.clamp(0, image.width), y2.clamp(0, image.height)),
-      math.Point(rightX1.clamp(0, image.width), y1.clamp(0, image.height)),
-    ];
+    // Clamp coordinates
+    final leftX1Clamped = leftX1.clamp(0, image.width);
+    final leftX2Clamped = leftX2.clamp(0, image.width);
+    final rightX1Clamped = rightX1.clamp(0, image.width);
+    final rightX2Clamped = rightX2.clamp(0, image.width);
+    final y1Clamped = y1.clamp(0, image.height);
+    final y2Clamped = y2.clamp(0, image.height);
 
-    // Draw filled polygon - fillPolygon signature: fillPolygon(Image src, List<Point> points, {Color? color})
-    final polygonPoints = points.map((p) => img.Point(p.x, p.y)).toList();
     final fillColor = img.ColorRgba8(0, 255, 0, 100);
     
-    // Use fillPolygon with positional parameters (image, points list, then named color)
-    img.fillPolygon(image, polygonPoints, color: fillColor);
+    // Fill polygon manually using scanline algorithm (simpler approach)
+    // Draw horizontal lines from top to bottom to fill the area
+    final startY = y1Clamped < y2Clamped ? y1Clamped : y2Clamped;
+    final endY = y1Clamped > y2Clamped ? y1Clamped : y2Clamped;
+    
+    for (int y = startY; y <= endY; y++) {
+      // Calculate x positions at this y using linear interpolation
+      final t = endY > startY ? (y - startY) / (endY - startY) : 0.0;
+      final leftX = (leftX1Clamped + (leftX2Clamped - leftX1Clamped) * t).round();
+      final rightX = (rightX1Clamped + (rightX2Clamped - rightX1Clamped) * t).round();
+      
+      final xStart = leftX < rightX ? leftX : rightX;
+      final xEnd = leftX > rightX ? leftX : rightX;
+      
+      // Draw horizontal line
+      for (int x = xStart.clamp(0, image.width); x <= xEnd.clamp(0, image.width); x++) {
+        if (x >= 0 && x < image.width && y >= 0 && y < image.height) {
+          image.setPixel(x, y, fillColor);
+        }
+      }
+    }
   }
 }

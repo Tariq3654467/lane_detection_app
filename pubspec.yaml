@@ -37,7 +37,7 @@ dependencies:
   camera: ^0.11.0+2
   image: ^4.1.7 # For image processing (grayscale, blur, etc.)
   path_provider: ^2.0.8
-  permission_handler: ^10.0.0 # For requesting camera permissions
+  permission_handler: ^11.3.1 # For requesting camera permissions
   collection: ^1.18.0 # For advanced collection operations
 
 dev_dependencies:

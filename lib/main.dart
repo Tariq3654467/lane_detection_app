@@ -22,14 +22,83 @@ class LaneDetectionApp extends StatelessWidget {
         primarySwatch: Colors.blue,
         useMaterial3: true,
       ),
-      home: const LaneDetectionScreen(),
+      home: const MainScreen(),
       debugShowCheckedModeBanner: false,
     );
   }
 }
 
+/// Main screen that manages navigation between Dashboard and Camera
+class MainScreen extends StatefulWidget {
+  const MainScreen({super.key});
+
+  @override
+  State<MainScreen> createState() => _MainScreenState();
+}
+
+class _MainScreenState extends State<MainScreen> {
+  // Shared dashboard data
+  late DashboardData _dashboardData;
+  bool _showCamera = false; // false = Dashboard, true = Camera
+
+  @override
+  void initState() {
+    super.initState();
+    _dashboardData = DashboardData(sessionStartTime: DateTime.now());
+  }
+
+  void _toggleView() {
+    setState(() {
+      _showCamera = !_showCamera;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_showCamera) {
+      return LaneDetectionScreen(
+        dashboardData: _dashboardData,
+        onDataUpdate: () {
+          setState(() {}); // Refresh when returning to dashboard
+        },
+        onBack: () {
+          setState(() {
+            _showCamera = false;
+          });
+        },
+      );
+    }
+
+    return Scaffold(
+      body: DashboardScreen(data: _dashboardData),
+      floatingActionButton: Container(
+        margin: const EdgeInsets.only(bottom: 20),
+        child: FloatingActionButton.extended(
+          onPressed: _toggleView,
+          backgroundColor: Colors.blue.shade700,
+          icon: const Icon(Icons.camera_alt, color: Colors.white),
+          label: const Text(
+            'Open Camera',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          ),
+        ),
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+    );
+  }
+}
+
 class LaneDetectionScreen extends StatefulWidget {
-  const LaneDetectionScreen({super.key});
+  final DashboardData dashboardData;
+  final VoidCallback onDataUpdate;
+  final VoidCallback? onBack;
+
+  const LaneDetectionScreen({
+    super.key,
+    required this.dashboardData,
+    required this.onDataUpdate,
+    this.onBack,
+  });
 
   @override
   State<LaneDetectionScreen> createState() => _LaneDetectionScreenState();
@@ -50,13 +119,9 @@ class _LaneDetectionScreenState extends State<LaneDetectionScreen> {
   double _avgProcessingTime = 0.0;
   final List<double> _processingTimes = [];
 
-  // Dashboard data tracking
-  late DashboardData _dashboardData;
-
   @override
   void initState() {
     super.initState();
-    _dashboardData = DashboardData(sessionStartTime: DateTime.now());
     _initializeCamera();
   }
 
@@ -120,13 +185,16 @@ class _LaneDetectionScreenState extends State<LaneDetectionScreen> {
           }
 
           // Update dashboard data
-          _dashboardData.updateWithFrame(
+          widget.dashboardData.updateWithFrame(
             lanesDetected: result.lanesDetected,
             processingTime: processingTime,
             fps: _currentFps > 0 ? _currentFps : 0.0,
             result: result,
             departureStatus: _departureStatus,
           );
+          
+          // Notify parent to update dashboard
+          widget.onDataUpdate();
         });
       }
     } catch (e) {
@@ -139,17 +207,14 @@ class _LaneDetectionScreenState extends State<LaneDetectionScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => DashboardScreen(data: _dashboardData.copy()),
-            ),
-          );
-        },
+      appBar: AppBar(
+        title: const Text('Lane Detection'),
         backgroundColor: Colors.blue.shade700,
-        child: const Icon(Icons.dashboard, color: Colors.white),
+        foregroundColor: Colors.white,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: widget.onBack,
+        ),
       ),
       body: _controller == null || !_controller!.value.isInitialized
           ? const Center(
