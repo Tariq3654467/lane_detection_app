@@ -4,7 +4,7 @@
     <uses-feature android:name="android.hardware.camera" android:required="true" />
     
     <application
-        android:label="lane_detection_app"
+        android:label="Lane Detection"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

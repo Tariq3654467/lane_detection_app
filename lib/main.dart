@@ -11,18 +11,130 @@ void main() {
   runApp(const LaneDetectionApp());
 }
 
+class SplashScreen extends StatefulWidget {
+  const SplashScreen({super.key});
+
+  @override
+  State<SplashScreen> createState() => _SplashScreenState();
+}
+
+class _SplashScreenState extends State<SplashScreen> {
+  @override
+  void initState() {
+    super.initState();
+    _goNext();
+  }
+
+  Future<void> _goNext() async {
+    await Future.delayed(const Duration(milliseconds: 1200));
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => const MainScreen()),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              scheme.primary,
+              scheme.primaryContainer,
+            ],
+          ),
+        ),
+        child: SafeArea(
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.16),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.25),
+                      width: 1,
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.route,
+                    size: 56,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                const Text(
+                  'Lane Detection',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Real-time lane monitoring',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.85),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 28),
+                SizedBox(
+                  width: 28,
+                  height: 28,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 3,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      Colors.white.withOpacity(0.95),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class LaneDetectionApp extends StatelessWidget {
   const LaneDetectionApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Lane Detection App',
+      title: 'Lane Detection',
       theme: ThemeData(
-        primarySwatch: Colors.blue,
         useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF1E5EFF),
+          brightness: Brightness.light,
+        ),
+        scaffoldBackgroundColor: const Color(0xFFF6F8FF),
+        appBarTheme: const AppBarTheme(
+          centerTitle: true,
+        ),
       ),
-      home: const MainScreen(),
+      darkTheme: ThemeData(
+        useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF1E5EFF),
+          brightness: Brightness.dark,
+        ),
+      ),
+      themeMode: ThemeMode.system,
+      home: const SplashScreen(),
       debugShowCheckedModeBanner: false,
     );
   }
@@ -119,11 +231,11 @@ class _LaneDetectionScreenState extends State<LaneDetectionScreen> {
   double _avgProcessingTime = 0.0;
   final List<double> _processingTimes = [];
   
-  // Frame throttling
+  // Frame throttling - more aggressive to prevent lag
   int _frameSkipCount = 0;
-  static const int _frameSkipInterval = 2; // Process every 3rd frame
+  static const int _frameSkipInterval = 5; // Process every 6th frame (reduce load)
   DateTime? _lastProcessTime;
-  static const int _minProcessingIntervalMs = 100; // Max 10 fps processing
+  static const int _minProcessingIntervalMs = 200; // Max 5 fps processing (reduce lag)
 
   @override
   void initState() {
@@ -178,10 +290,11 @@ class _LaneDetectionScreenState extends State<LaneDetectionScreen> {
     final startTime = DateTime.now();
 
     try {
-      // Process frame asynchronously to avoid blocking UI
-      final result = await Future.microtask(() => LaneDetection.detectLanes(image))
+      // Process frame asynchronously - use Future.value to offload to event loop
+      // This helps prevent blocking but CameraImage can't be serialized for compute()
+      final result = await Future(() => LaneDetection.detectLanes(image))
           .timeout(
-        const Duration(seconds: 2),
+        const Duration(seconds: 1), // Shorter timeout
         onTimeout: () => LaneDetectionResult(lanesDetected: false),
       );
 

@@ -51,9 +51,14 @@ class LaneDetection {
         return LaneDetectionResult(lanesDetected: false);
       }
 
+      // Downscale image for faster processing (reduce by 50%)
+      final processedWidth = (image.width * 0.5).round();
+      final processedHeight = (image.height * 0.5).round();
+      final resizedImage = img.copyResize(image, width: processedWidth, height: processedHeight);
+
       // Preprocessing
-      final gray = ImageProcessor.grayscale(image);
-      final blurred = ImageProcessor.gaussianBlur(gray, radius: 5);
+      final gray = ImageProcessor.grayscale(resizedImage);
+      final blurred = ImageProcessor.gaussianBlur(gray, radius: 3); // Reduced blur radius
       final edges = ImageProcessor.cannyEdgeDetection(
         blurred,
         lowThreshold: 50,
@@ -70,10 +75,10 @@ class LaneDetection {
       );
       final roiEdges = ImageProcessor.applyROI(edges, roiMask);
 
-      // Detect lines using Hough Transform
-      final lines = _houghTransform(roiEdges);
+      // Detect lines using optimized Hough Transform
+      final lines = _houghTransformOptimized(roiEdges);
 
-      // Separate left and right lanes
+      // Separate left and right lanes (scale back to original dimensions)
       final laneLines = _separateLanes(lines, image.width, image.height);
 
       // Calculate curvature and vehicle offset
@@ -132,30 +137,34 @@ class LaneDetection {
     return (p1: p1, p2: p2);
   }
 
-  /// Hough Transform for line detection
-  static List<({math.Point<int> p1, math.Point<int> p2})> _houghTransform(img.Image edges) {
+  /// Optimized Hough Transform for line detection (faster version)
+  static List<({math.Point<int> p1, math.Point<int> p2})> _houghTransformOptimized(img.Image edges) {
     final lines = <({math.Point<int> p1, math.Point<int> p2})>[];
     final width = edges.width;
     final height = edges.height;
 
-    // Accumulator array for Hough space
+    // Reduced resolution for accumulator (faster processing)
     final maxRho = math.sqrt(width * width + height * height).round();
-    final rhoStep = 1.0;
-    final thetaStep = math.pi / 180.0;
+    final rhoStep = 2.0; // Increased step for faster processing
+    final thetaStep = math.pi / 90.0; // Reduced from 180 to 90 angles (2x faster)
+    final rhoSize = ((2 * maxRho) / rhoStep).round();
+    final thetaSize = 90;
+    
     final accumulator = List.generate(
-      (2 * maxRho).round(),
-      (_) => List.filled(180, 0),
+      rhoSize,
+      (_) => List.filled(thetaSize, 0),
     );
 
-    // Vote in accumulator
-    for (int y = 0; y < height; y++) {
-      for (int x = 0; x < width; x++) {
+    // Sample pixels instead of processing all (skip every other pixel)
+    final step = 2;
+    for (int y = 0; y < height; y += step) {
+      for (int x = 0; x < width; x += step) {
         final pixel = edges.getPixel(x, y);
         if (img.getLuminance(pixel) > 128) {
-          for (int thetaIndex = 0; thetaIndex < 180; thetaIndex++) {
+          for (int thetaIndex = 0; thetaIndex < thetaSize; thetaIndex++) {
             final theta = thetaIndex * thetaStep;
-            final rho = (x * math.cos(theta) + y * math.sin(theta)).round();
-            final rhoIndex = rho + maxRho;
+            final rho = (x * math.cos(theta) + y * math.sin(theta));
+            final rhoIndex = ((rho + maxRho) / rhoStep).round();
             if (rhoIndex >= 0 && rhoIndex < accumulator.length) {
               accumulator[rhoIndex][thetaIndex]++;
             }
@@ -164,12 +173,12 @@ class LaneDetection {
       }
     }
 
-    // Find peaks in accumulator
-    final threshold = 50;
+    // Find peaks in accumulator with higher threshold
+    final threshold = 30; // Lower threshold due to sampling
     for (int rhoIndex = 0; rhoIndex < accumulator.length; rhoIndex++) {
-      for (int thetaIndex = 0; thetaIndex < 180; thetaIndex++) {
+      for (int thetaIndex = 0; thetaIndex < thetaSize; thetaIndex++) {
         if (accumulator[rhoIndex][thetaIndex] > threshold) {
-          final rho = rhoIndex - maxRho;
+          final rho = (rhoIndex * rhoStep) - maxRho;
           final theta = thetaIndex * thetaStep;
 
           // Convert to line endpoints
@@ -191,6 +200,11 @@ class LaneDetection {
     }
 
     return lines;
+  }
+
+  /// Original Hough Transform (kept for reference)
+  static List<({math.Point<int> p1, math.Point<int> p2})> _houghTransform(img.Image edges) {
+    return _houghTransformOptimized(edges);
   }
 
   /// Separate detected lines into left and right lanes

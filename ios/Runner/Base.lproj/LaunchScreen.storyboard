@@ -18,11 +18,19 @@
                         <subviews>
                             <imageView opaque="NO" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="center" image="LaunchImage" translatesAutoresizingMaskIntoConstraints="NO" id="YRO-k0-Ey4">
                             </imageView>
+                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" text="Lane Detection" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignCenters" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="SPL-4o-bh3">
+                                <rect key="frame" x="50" y="420" width="275" height="30"/>
+                                <fontDescription key="fontDescription" type="system" weight="semibold" pointSize="22"/>
+                                <color key="textColor" white="1" alpha="0.95" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
+                                <nil key="highlightedColor"/>
+                            </label>
                         </subviews>
-                        <color key="backgroundColor" red="1" green="1" blue="1" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                        <color key="backgroundColor" red="0.1176470588" green="0.368627451" blue="1" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
                         <constraints>
                             <constraint firstItem="YRO-k0-Ey4" firstAttribute="centerX" secondItem="Ze5-6b-2t3" secondAttribute="centerX" id="1a2-6s-vTC"/>
                             <constraint firstItem="YRO-k0-Ey4" firstAttribute="centerY" secondItem="Ze5-6b-2t3" secondAttribute="centerY" id="4X2-HB-R7a"/>
+                            <constraint firstItem="SPL-4o-bh3" firstAttribute="top" secondItem="YRO-k0-Ey4" secondAttribute="bottom" constant="16" id="Xz8-bA-k0c"/>
+                            <constraint firstItem="SPL-4o-bh3" firstAttribute="centerX" secondItem="Ze5-6b-2t3" secondAttribute="centerX" id="zqY-9F-kfB"/>
                         </constraints>
                     </view>
                 </viewController>
