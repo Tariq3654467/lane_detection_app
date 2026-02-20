@@ -376,10 +376,15 @@ class LaneDetection {
       math.Point(rightX1.clamp(0, image.width), y1.clamp(0, image.height)),
     ];
 
+    // Draw filled polygon manually
+    final polygonPoints = points.map((p) => img.Point(p.x, p.y)).toList();
+    final fillColor = img.ColorRgba8(0, 255, 0, 100);
+    
+    // Use fillPolygon with correct signature
     img.fillPolygon(
       image,
-      points: points.map((p) => img.Point(p.x, p.y)).toList(),
-      color: img.ColorRgba8(0, 255, 0, 100),
+      polygonPoints,
+      color: fillColor,
     );
   }
 }
