@@ -127,9 +127,14 @@ class LaneDetection {
     }
   }
 
+  /// Represents a line with two endpoints
+  static ({math.Point<int> p1, math.Point<int> p2}) _createLine(math.Point<int> p1, math.Point<int> p2) {
+    return (p1: p1, p2: p2);
+  }
+
   /// Hough Transform for line detection
-  static List<math.Point<math.Point<int>>> _houghTransform(img.Image edges) {
-    final lines = <math.Point<math.Point<int>>>[];
+  static List<({math.Point<int> p1, math.Point<int> p2})> _houghTransform(img.Image edges) {
+    final lines = <({math.Point<int> p1, math.Point<int> p2})>[];
     final width = edges.width;
     final height = edges.height;
 
@@ -178,7 +183,7 @@ class LaneDetection {
             final y2 = ((rho - x2 * cosTheta) / sinTheta).round();
 
             if (y1 >= 0 && y1 < height && y2 >= 0 && y2 < height) {
-              lines.add(math.Point(math.Point(x1, y1), math.Point(x2, y2)));
+              lines.add(_createLine(math.Point(x1, y1), math.Point(x2, y2)));
             }
           }
         }
@@ -190,7 +195,7 @@ class LaneDetection {
 
   /// Separate detected lines into left and right lanes
   static ({LaneLine? leftLane, LaneLine? rightLane}) _separateLanes(
-    List<math.Point<math.Point<int>>> lines,
+    List<({math.Point<int> p1, math.Point<int> p2})> lines,
     int imageWidth,
     int imageHeight,
   ) {
@@ -200,8 +205,8 @@ class LaneDetection {
     final centerX = imageWidth ~/ 2;
 
     for (final line in lines) {
-      final p1 = line.x;
-      final p2 = line.y;
+      final p1 = line.p1;
+      final p2 = line.p2;
 
       // Calculate slope
       if ((p2.x - p1.x).abs() < 1) continue;
@@ -373,7 +378,7 @@ class LaneDetection {
 
     img.fillPolygon(
       image,
-      points.map((p) => img.Point(p.x, p.y)).toList(),
+      points: points.map((p) => img.Point(p.x, p.y)).toList(),
       color: img.ColorRgba8(0, 255, 0, 100),
     );
   }

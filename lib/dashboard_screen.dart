@@ -100,7 +100,7 @@ class DashboardScreen extends StatelessWidget {
                 Expanded(child: _buildMetricCard(
                   'Avg Curvature',
                   data.averageCurvature.toStringAsFixed(2),
-                  Icons.curved_lines,
+                  Icons.timeline,
                   Colors.indigo,
                 )),
                 const SizedBox(width: 12),
