@@ -118,6 +118,12 @@ class _LaneDetectionScreenState extends State<LaneDetectionScreen> {
   double _currentFps = 0.0;
   double _avgProcessingTime = 0.0;
   final List<double> _processingTimes = [];
+  
+  // Frame throttling
+  int _frameSkipCount = 0;
+  static const int _frameSkipInterval = 2; // Process every 3rd frame
+  DateTime? _lastProcessTime;
+  static const int _minProcessingIntervalMs = 100; // Max 10 fps processing
 
   @override
   void initState() {
