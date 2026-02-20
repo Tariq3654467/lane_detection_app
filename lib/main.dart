@@ -4,7 +4,6 @@ import 'package:camera/camera.dart';
 import 'camera_service.dart';
 import 'lane_detection.dart';
 import 'lane_departure_warning.dart';
-import 'dart:math' as math;
 
 void main() {
   runApp(const LaneDetectionApp());
