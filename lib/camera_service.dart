@@ -66,9 +66,9 @@ class CameraService {
     await _imageStreamSubscription?.cancel();
   }
 
-  void dispose() {
-    stopImageStream();
-    _controller?.dispose();
+  Future<void> dispose() async {
+    await stopImageStream();
+    await _controller?.dispose();
     _controller = null;
     _isInitialized = false;
   }
