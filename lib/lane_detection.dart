@@ -376,14 +376,14 @@ class LaneDetection {
       math.Point(rightX1.clamp(0, image.width), y1.clamp(0, image.height)),
     ];
 
-    // Draw filled polygon - using correct API signature
+    // Draw filled polygon - fillPolygon only takes image as positional arg
     final polygonPoints = points.map((p) => img.Point(p.x, p.y)).toList();
     final fillColor = img.ColorRgba8(0, 255, 0, 100);
     
-    // fillPolygon takes image as first arg, then points as named parameter
+    // New API: fillPolygon(image, points: [...], color: ...)
     img.fillPolygon(
       image,
-      polygonPoints,
+      points: polygonPoints,
       color: fillColor,
     );
   }
