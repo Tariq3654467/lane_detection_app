@@ -39,6 +39,8 @@ dependencies:
   path_provider: ^2.0.8
   permission_handler: ^11.3.1 # For requesting camera permissions
   collection: ^1.18.0 # For advanced collection operations
+  google_fonts: ^6.2.1 # For modern typography
+  fl_chart: ^0.69.0 # For improved charts
 
 dev_dependencies:
   flutter_test:
