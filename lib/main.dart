@@ -8,6 +8,7 @@ import 'lane_detection.dart';
 import 'lane_departure_warning.dart';
 import 'dashboard_data.dart';
 import 'dashboard_screen.dart';
+import 'tflite_service.dart';
 
 void main() {
   runApp(const LaneDetectionApp());
@@ -84,6 +85,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   late AnimationController _controller;
   late Animation<double> _scaleAnimation;
   late Animation<double> _fadeAnimation;
+  String _loadingText = 'Loading AI Model...';
 
   @override
   void initState() {
@@ -102,11 +104,19 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     );
 
     _controller.forward();
-    _goNext();
+    _loadModelAndNavigate();
   }
 
-  Future<void> _goNext() async {
-    await Future.delayed(const Duration(milliseconds: 2000));
+  Future<void> _loadModelAndNavigate() async {
+    // Load TFLite model while splash is visible
+    final loaded = await TFLiteService().loadModel();
+    if (mounted) {
+      setState(() {
+        _loadingText = loaded ? '✓ AI Model Ready' : 'Classic Mode (no model)';
+      });
+    }
+    // Brief pause so user can read the status
+    await Future.delayed(const Duration(milliseconds: 600));
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
@@ -221,6 +231,15 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                       valueColor: AlwaysStoppedAnimation<Color>(
                         Colors.white.withOpacity(0.9),
                       ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    _loadingText,
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.75),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w400,
                     ),
                   ),
                 ],
