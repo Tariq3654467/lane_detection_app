@@ -1,7 +1,9 @@
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'package:camera/camera.dart';
 import 'package:image/image.dart' as img;
 import 'image_processor.dart';
+import 'tflite_service.dart';
 
 /// Represents a detected lane line
 class LaneLine {
@@ -25,6 +27,7 @@ class LaneDetectionResult {
   final double? curvature;
   final double? vehicleOffset;
   final bool lanesDetected;
+  final bool usedTFLite; // track which pipeline was used
 
   LaneDetectionResult({
     this.leftLane,
@@ -32,67 +35,59 @@ class LaneDetectionResult {
     this.curvature,
     this.vehicleOffset,
     required this.lanesDetected,
+    this.usedTFLite = false,
   });
 }
 
-/// Main lane detection class
+/// Main lane detection class — tries TFLite model first, falls back to
+/// classical Hough-transform pipeline if the model is not loaded or fails.
 class LaneDetection {
   static const int minLineLength = 50;
   static const int maxLineGap = 10;
   static const double minSlope = 0.5;
   static const double maxSlope = 2.0;
 
-  /// Detect lanes from camera image
+  // ─────────────────────── Public entry point ──────────────────────
+
+  /// Detect lanes from a CameraImage.
   static Future<LaneDetectionResult> detectLanes(CameraImage cameraImage) async {
     try {
-      // Convert CameraImage to Image
       final image = _cameraImageToImage(cameraImage);
-      if (image == null) {
-        return LaneDetectionResult(lanesDetected: false);
+      if (image == null) return LaneDetectionResult(lanesDetected: false);
+
+      // ── Try TFLite path ──────────────────────────────────────────
+      final tflite = TFLiteService();
+      if (tflite.isLoaded) {
+        final result = _detectWithTFLite(image, tflite);
+        if (result != null) return result;
       }
 
-      // Downscale image for faster processing (reduce by 50%)
-      final processedWidth = (image.width * 0.5).round();
-      final processedHeight = (image.height * 0.5).round();
-      final resizedImage = img.copyResize(image, width: processedWidth, height: processedHeight);
+      // ── Algorithmic fallback ─────────────────────────────────────
+      return _detectWithHough(image);
+    } catch (e) {
+      return LaneDetectionResult(lanesDetected: false);
+    }
+  }
 
-      // Preprocessing
-      final gray = ImageProcessor.grayscale(resizedImage);
-      final blurred = ImageProcessor.gaussianBlur(gray, radius: 3); // Reduced blur radius
-      final edges = ImageProcessor.cannyEdgeDetection(
-        blurred,
-        lowThreshold: 50,
-        highThreshold: 150,
-      );
+  // ─────────────────────── TFLite pipeline ─────────────────────────
 
-      // Apply ROI
-      final roiMask = ImageProcessor.createROIMask(
-        edges,
-        topRatio: 0.5,
-        bottomRatio: 0.95,
-        leftRatio: 0.05,
-        rightRatio: 0.95,
-      );
-      final roiEdges = ImageProcessor.applyROI(edges, roiMask);
+  static LaneDetectionResult? _detectWithTFLite(img.Image image, TFLiteService tflite) {
+    try {
+      final outputMask = tflite.runInference(image);
+      if (outputMask == null) return null;
 
-      // Detect lines using optimized Hough Transform
-      final lines = _houghTransformOptimized(roiEdges);
+      // Output tensor shape [1, H, W, 1] or [1, H, W, C] — use first channel
+      final maskH = tflite.modelInputHeight;
+      final maskW = tflite.modelInputWidth;
 
-      // Separate left and right lanes (scale back to original dimensions)
-      final laneLines = _separateLanes(lines, image.width, image.height);
+      final laneLines = _parseMaskToLanes(outputMask, maskW, maskH, image.width, image.height);
 
-      // Calculate curvature and vehicle offset
       double? curvature;
       double? vehicleOffset;
-
       if (laneLines.leftLane != null && laneLines.rightLane != null) {
         curvature = _calculateCurvature(laneLines.leftLane!, laneLines.rightLane!, image.height);
         vehicleOffset = _calculateVehicleOffset(
-          laneLines.leftLane!,
-          laneLines.rightLane!,
-          image.width,
-          image.height,
-        );
+          laneLines.leftLane!, laneLines.rightLane!, image.width, image.height);
       }
 
       return LaneDetectionResult(
@@ -100,25 +95,138 @@ class LaneDetection {
         rightLane: laneLines.rightLane,
         curvature: curvature,
         vehicleOffset: vehicleOffset,
-        lanesDetected: laneLines.leftLane != null && laneLines.rightLane != null,
+        lanesDetected: laneLines.leftLane != null || laneLines.rightLane != null,
+        usedTFLite: true,
       );
     } catch (e) {
-      return LaneDetectionResult(lanesDetected: false);
+      return null; // will trigger fallback
     }
   }
 
-  /// Convert CameraImage to Image object
+  /// Parse a flat segmentation mask into left/right LaneLines.
+  ///
+  /// Strategy: for each row in the bottom half, find the leftmost and
+  /// rightmost activated pixel (value > 0.5) to the left/right of centre.
+  static ({LaneLine? leftLane, LaneLine? rightLane}) _parseMaskToLanes(
+    Float32List mask,
+    int maskW,
+    int maskH,
+    int imgW,
+    int imgH,
+  ) {
+    final scaleX = imgW / maskW;
+    final scaleY = imgH / maskH;
+    final centerX = maskW ~/ 2;
+
+    final leftPoints = <math.Point<int>>[];
+    final rightPoints = <math.Point<int>>[];
+
+    // Only look at the bottom 60% of the mask (road region)
+    final startRow = (maskH * 0.4).round();
+
+    for (int row = startRow; row < maskH; row++) {
+      int? leftMostX;
+      int? rightMostX;
+
+      for (int col = 0; col < maskW; col++) {
+        // Support both [1,H,W,1] (stride = maskW) layouts
+        final pixelValue = mask[row * maskW + col];
+        if (pixelValue > 0.5) {
+          if (col < centerX) {
+            // Left side: track the rightmost activated pixel (lane boundary)
+            if (leftMostX == null || col > leftMostX) leftMostX = col;
+          } else {
+            // Right side: track the leftmost activated pixel (lane boundary)
+            if (rightMostX == null || col < rightMostX) rightMostX = col;
+          }
+        }
+      }
+
+      if (leftMostX != null) {
+        leftPoints.add(math.Point(
+          (leftMostX * scaleX).round(),
+          (row * scaleY).round(),
+        ));
+      }
+      if (rightMostX != null) {
+        rightPoints.add(math.Point(
+          (rightMostX * scaleX).round(),
+          (row * scaleY).round(),
+        ));
+      }
+    }
+
+    LaneLine? leftLane;
+    LaneLine? rightLane;
+
+    if (leftPoints.length >= 5) {
+      final fit = _fitLine(leftPoints);
+      if (fit != null) {
+        leftLane = LaneLine(
+          points: leftPoints, slope: fit.slope, intercept: fit.intercept, isLeft: true);
+      }
+    }
+    if (rightPoints.length >= 5) {
+      final fit = _fitLine(rightPoints);
+      if (fit != null) {
+        rightLane = LaneLine(
+          points: rightPoints, slope: fit.slope, intercept: fit.intercept, isLeft: false);
+      }
+    }
+
+    return (leftLane: leftLane, rightLane: rightLane);
+  }
+
+  // ────────────────── Classical Hough pipeline (fallback) ──────────
+
+  static LaneDetectionResult _detectWithHough(img.Image image) {
+    // Downscale for faster processing (50%)
+    final processedWidth = (image.width * 0.5).round();
+    final processedHeight = (image.height * 0.5).round();
+    final resizedImage =
+        img.copyResize(image, width: processedWidth, height: processedHeight);
+
+    final gray = ImageProcessor.grayscale(resizedImage);
+    final blurred = ImageProcessor.gaussianBlur(gray, radius: 3);
+    final edges = ImageProcessor.cannyEdgeDetection(
+      blurred, lowThreshold: 50, highThreshold: 150);
+
+    final roiMask = ImageProcessor.createROIMask(
+      edges, topRatio: 0.5, bottomRatio: 0.95, leftRatio: 0.05, rightRatio: 0.95);
+    final roiEdges = ImageProcessor.applyROI(edges, roiMask);
+
+    final lines = _houghTransformOptimized(roiEdges);
+    final laneLines = _separateLanes(lines, image.width, image.height);
+
+    double? curvature;
+    double? vehicleOffset;
+    if (laneLines.leftLane != null && laneLines.rightLane != null) {
+      curvature =
+          _calculateCurvature(laneLines.leftLane!, laneLines.rightLane!, image.height);
+      vehicleOffset = _calculateVehicleOffset(
+          laneLines.leftLane!, laneLines.rightLane!, image.width, image.height);
+    }
+
+    return LaneDetectionResult(
+      leftLane: laneLines.leftLane,
+      rightLane: laneLines.rightLane,
+      curvature: curvature,
+      vehicleOffset: vehicleOffset,
+      lanesDetected: laneLines.leftLane != null && laneLines.rightLane != null,
+      usedTFLite: false,
+    );
+  }
+
+  // ──────────────────── Shared helpers ─────────────────────────────
+
+  /// Convert CameraImage (YUV420) to img.Image
   static img.Image? _cameraImageToImage(CameraImage cameraImage) {
     try {
       if (cameraImage.format.group == ImageFormatGroup.yuv420) {
-        final yPlane = cameraImage.planes[0].bytes;
-        final uPlane = cameraImage.planes[1].bytes;
-        final vPlane = cameraImage.planes[2].bytes;
-
         return ImageProcessor.yuv420ToImage(
-          yPlane,
-          uPlane,
-          vPlane,
+          cameraImage.planes[0].bytes,
+          cameraImage.planes[1].bytes,
+          cameraImage.planes[2].bytes,
           cameraImage.width,
           cameraImage.height,
           cameraImage.planes[0].bytesPerRow,
@@ -132,31 +240,27 @@ class LaneDetection {
     }
   }
 
-  /// Represents a line with two endpoints
-  static ({math.Point<int> p1, math.Point<int> p2}) _createLine(math.Point<int> p1, math.Point<int> p2) {
+  static ({math.Point<int> p1, math.Point<int> p2}) _createLine(
+      math.Point<int> p1, math.Point<int> p2) {
     return (p1: p1, p2: p2);
   }
 
-  /// Optimized Hough Transform for line detection (faster version)
-  static List<({math.Point<int> p1, math.Point<int> p2})> _houghTransformOptimized(img.Image edges) {
+  static List<({math.Point<int> p1, math.Point<int> p2})>
+      _houghTransformOptimized(img.Image edges) {
     final lines = <({math.Point<int> p1, math.Point<int> p2})>[];
     final width = edges.width;
     final height = edges.height;
 
-    // Reduced resolution for accumulator (faster processing)
     final maxRho = math.sqrt(width * width + height * height).round();
-    final rhoStep = 2.0; // Increased step for faster processing
-    final thetaStep = math.pi / 90.0; // Reduced from 180 to 90 angles (2x faster)
+    const rhoStep = 2.0;
+    final thetaStep = math.pi / 90.0;
     final rhoSize = ((2 * maxRho) / rhoStep).round();
-    final thetaSize = 90;
-    
-    final accumulator = List.generate(
-      rhoSize,
-      (_) => List.filled(thetaSize, 0),
-    );
+    const thetaSize = 90;
 
-    // Sample pixels instead of processing all (skip every other pixel)
-    final step = 2;
+    final accumulator =
+        List.generate(rhoSize, (_) => List.filled(thetaSize, 0));
+
+    const step = 2;
     for (int y = 0; y < height; y += step) {
       for (int x = 0; x < width; x += step) {
         final pixel = edges.getPixel(x, y);
@@ -173,15 +277,12 @@ class LaneDetection {
       }
     }
 
-    // Find peaks in accumulator with higher threshold
-    final threshold = 30; // Lower threshold due to sampling
+    const threshold = 30;
     for (int rhoIndex = 0; rhoIndex < accumulator.length; rhoIndex++) {
       for (int thetaIndex = 0; thetaIndex < thetaSize; thetaIndex++) {
         if (accumulator[rhoIndex][thetaIndex] > threshold) {
           final rho = (rhoIndex * rhoStep) - maxRho;
           final theta = thetaIndex * thetaStep;
-
-          // Convert to line endpoints
           final cosTheta = math.cos(theta);
           final sinTheta = math.sin(theta);
 
@@ -198,16 +299,9 @@ class LaneDetection {
         }
       }
     }
-
     return lines;
   }
 
-  /// Original Hough Transform (kept for reference)
-  static List<({math.Point<int> p1, math.Point<int> p2})> _houghTransform(img.Image edges) {
-    return _houghTransformOptimized(edges);
-  }
-
-  /// Separate detected lines into left and right lanes
   static ({LaneLine? leftLane, LaneLine? rightLane}) _separateLanes(
     List<({math.Point<int> p1, math.Point<int> p2})> lines,
     int imageWidth,
@@ -215,31 +309,23 @@ class LaneDetection {
   ) {
     final leftLines = <math.Point<int>>[];
     final rightLines = <math.Point<int>>[];
-
     final centerX = imageWidth ~/ 2;
 
     for (final line in lines) {
       final p1 = line.p1;
       final p2 = line.p2;
-
-      // Calculate slope
       if ((p2.x - p1.x).abs() < 1) continue;
       final slope = (p2.y - p1.y) / (p2.x - p1.x);
-
       if (slope.abs() < minSlope || slope.abs() > maxSlope) continue;
 
-      // Determine if left or right lane
       final midX = (p1.x + p2.x) ~/ 2;
       if (slope < 0 && midX < centerX) {
-        // Left lane (negative slope, left side)
         leftLines.addAll([p1, p2]);
       } else if (slope > 0 && midX > centerX) {
-        // Right lane (positive slope, right side)
         rightLines.addAll([p1, p2]);
       }
     }
 
-    // Fit lines to points
     LaneLine? leftLane;
     LaneLine? rightLane;
 
@@ -247,31 +333,28 @@ class LaneDetection {
       final fitted = _fitLine(leftLines);
       if (fitted != null) {
         leftLane = LaneLine(
-          points: leftLines,
-          slope: fitted.slope,
-          intercept: fitted.intercept,
-          isLeft: true,
-        );
+            points: leftLines,
+            slope: fitted.slope,
+            intercept: fitted.intercept,
+            isLeft: true);
       }
     }
-
     if (rightLines.length >= 2) {
       final fitted = _fitLine(rightLines);
       if (fitted != null) {
         rightLane = LaneLine(
-          points: rightLines,
-          slope: fitted.slope,
-          intercept: fitted.intercept,
-          isLeft: false,
-        );
+            points: rightLines,
+            slope: fitted.slope,
+            intercept: fitted.intercept,
+            isLeft: false);
       }
     }
 
     return (leftLane: leftLane, rightLane: rightLane);
   }
 
-  /// Fit a line to points using least squares
-  static ({double slope, double intercept})? _fitLine(List<math.Point<int>> points) {
+  static ({double slope, double intercept})? _fitLine(
+      List<math.Point<int>> points) {
     if (points.length < 2) return null;
 
     double sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
@@ -289,28 +372,19 @@ class LaneDetection {
 
     final slope = (n * sumXY - sumX * sumY) / denominator;
     final intercept = (sumY - slope * sumX) / n;
-
     return (slope: slope, intercept: intercept);
   }
 
-  /// Calculate lane curvature (simplified)
-  static double _calculateCurvature(LaneLine leftLane, LaneLine rightLane, int imageHeight) {
-    // Calculate curvature at bottom of image
+  static double _calculateCurvature(
+      LaneLine leftLane, LaneLine rightLane, int imageHeight) {
     final y = imageHeight.toDouble();
     final leftX = (y - leftLane.intercept) / leftLane.slope;
     final rightX = (y - rightLane.intercept) / rightLane.slope;
-
-    // Lane width
     final laneWidth = (rightX - leftX).abs();
-
-    // Simplified curvature calculation
     final avgSlope = (leftLane.slope.abs() + rightLane.slope.abs()) / 2;
-    final curvature = avgSlope / laneWidth * 1000; // Scale factor
-
-    return curvature;
+    return avgSlope / laneWidth * 1000;
   }
 
-  /// Calculate vehicle offset from lane center
   static double _calculateVehicleOffset(
     LaneLine leftLane,
     LaneLine rightLane,
@@ -322,35 +396,28 @@ class LaneDetection {
     final rightX = (y - rightLane.intercept) / rightLane.slope;
     final laneCenterX = (leftX + rightX) / 2;
     final vehicleCenterX = imageWidth / 2;
-
-    // Offset in pixels (positive = right, negative = left)
     final offset = vehicleCenterX - laneCenterX;
-
-    // Convert to meters (assuming ~3.7m lane width, approximate conversion)
     final laneWidthPixels = (rightX - leftX).abs();
     final metersPerPixel = 3.7 / laneWidthPixels;
-    final offsetMeters = offset * metersPerPixel;
-
-    return offsetMeters;
+    return offset * metersPerPixel;
   }
+
+  // ─────────────────────────── Drawing ─────────────────────────────
 
   /// Draw detected lanes on image
   static img.Image drawLanes(img.Image image, LaneDetectionResult result) {
-    final output = img.copyResize(image, width: image.width, height: image.height);
+    final output =
+        img.copyResize(image, width: image.width, height: image.height);
 
     if (result.leftLane != null) {
       _drawLaneLine(output, result.leftLane!, img.ColorRgb8(0, 255, 0));
     }
-
     if (result.rightLane != null) {
       _drawLaneLine(output, result.rightLane!, img.ColorRgb8(0, 255, 0));
     }
-
-    // Draw lane area if both lanes detected
     if (result.leftLane != null && result.rightLane != null) {
       _drawLaneArea(output, result.leftLane!, result.rightLane!);
     }
-
     return output;
   }
 
@@ -358,7 +425,6 @@ class LaneDetection {
     final height = image.height;
     final y1 = (height * 0.5).round();
     final y2 = height;
-
     final x1 = ((y1 - lane.intercept) / lane.slope).round();
     final x2 = ((y2 - lane.intercept) / lane.slope).round();
 
@@ -373,7 +439,8 @@ class LaneDetection {
     );
   }
 
-  static void _drawLaneArea(img.Image image, LaneLine leftLane, LaneLine rightLane) {
+  static void _drawLaneArea(
+      img.Image image, LaneLine leftLane, LaneLine rightLane) {
     final height = image.height;
     final y1 = (height * 0.5).round();
     final y2 = height;
@@ -383,32 +450,27 @@ class LaneDetection {
     final rightX1 = ((y1 - rightLane.intercept) / rightLane.slope).round();
     final rightX2 = ((y2 - rightLane.intercept) / rightLane.slope).round();
 
-    // Clamp coordinates
-    final leftX1Clamped = leftX1.clamp(0, image.width);
-    final leftX2Clamped = leftX2.clamp(0, image.width);
-    final rightX1Clamped = rightX1.clamp(0, image.width);
-    final rightX2Clamped = rightX2.clamp(0, image.width);
-    final y1Clamped = y1.clamp(0, image.height);
-    final y2Clamped = y2.clamp(0, image.height);
+    final leftX1C = leftX1.clamp(0, image.width);
+    final leftX2C = leftX2.clamp(0, image.width);
+    final rightX1C = rightX1.clamp(0, image.width);
+    final rightX2C = rightX2.clamp(0, image.width);
+    final y1C = y1.clamp(0, image.height);
+    final y2C = y2.clamp(0, image.height);
 
     final fillColor = img.ColorRgba8(0, 255, 0, 100);
-    
-    // Fill polygon manually using scanline algorithm (simpler approach)
-    // Draw horizontal lines from top to bottom to fill the area
-    final startY = y1Clamped < y2Clamped ? y1Clamped : y2Clamped;
-    final endY = y1Clamped > y2Clamped ? y1Clamped : y2Clamped;
-    
+    final startY = y1C < y2C ? y1C : y2C;
+    final endY = y1C > y2C ? y1C : y2C;
+
     for (int y = startY; y <= endY; y++) {
-      // Calculate x positions at this y using linear interpolation
       final t = endY > startY ? (y - startY) / (endY - startY) : 0.0;
-      final leftX = (leftX1Clamped + (leftX2Clamped - leftX1Clamped) * t).round();
-      final rightX = (rightX1Clamped + (rightX2Clamped - rightX1Clamped) * t).round();
-      
+      final leftX = (leftX1C + (leftX2C - leftX1C) * t).round();
+      final rightX = (rightX1C + (rightX2C - rightX1C) * t).round();
       final xStart = leftX < rightX ? leftX : rightX;
       final xEnd = leftX > rightX ? leftX : rightX;
-      
-      // Draw horizontal line
-      for (int x = xStart.clamp(0, image.width); x <= xEnd.clamp(0, image.width); x++) {
+
+      for (int x = xStart.clamp(0, image.width);
+          x <= xEnd.clamp(0, image.width);
+          x++) {
         if (x >= 0 && x < image.width && y >= 0 && y < image.height) {
           image.setPixel(x, y, fillColor);
         }
