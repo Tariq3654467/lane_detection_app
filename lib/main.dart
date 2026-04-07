@@ -10,7 +10,8 @@ import 'dashboard_data.dart';
 import 'dashboard_screen.dart';
 import 'tflite_service.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const LaneDetectionApp());
 }
 
@@ -178,11 +179,11 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                   Container(
                     padding: const EdgeInsets.all(24),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.15),
+                      color: Colors.white.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(30),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.white.withOpacity(0.3),
+                          color: Colors.white.withValues(alpha: 0.3),
                           blurRadius: 30,
                           spreadRadius: 5,
                         ),
@@ -199,7 +200,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                   // App Title with gradient text effect
                   ShaderMask(
                     shaderCallback: (bounds) => LinearGradient(
-                      colors: [Colors.white, Colors.white.withOpacity(0.8)],
+                      colors: [Colors.white, Colors.white.withValues(alpha: 0.8)],
                     ).createShader(bounds),
                     child: Text(
                       'Lane Detection',
@@ -215,7 +216,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                   Text(
                     'Real-time lane monitoring',
                     style: TextStyle(
-                      color: Colors.white.withOpacity(0.8),
+                      color: Colors.white.withValues(alpha: 0.8),
                       fontSize: 14,
                       fontWeight: FontWeight.w500,
                     ),
@@ -229,7 +230,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                     child: CircularProgressIndicator(
                       strokeWidth: 3,
                       valueColor: AlwaysStoppedAnimation<Color>(
-                        Colors.white.withOpacity(0.9),
+                        Colors.white.withValues(alpha: 0.9),
                       ),
                     ),
                   ),
@@ -237,7 +238,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                   Text(
                     _loadingText,
                     style: TextStyle(
-                      color: Colors.white.withOpacity(0.75),
+                      color: Colors.white.withValues(alpha: 0.75),
                       fontSize: 13,
                       fontWeight: FontWeight.w400,
                     ),
@@ -300,7 +301,7 @@ class _MainScreenState extends State<MainScreen> {
           borderRadius: BorderRadius.circular(24),
           boxShadow: [
             BoxShadow(
-              color: (isDark ? Colors.black : Colors.grey).withOpacity(0.2),
+              color: (isDark ? Colors.black : Colors.grey).withValues(alpha: 0.2),
               blurRadius: 20,
               offset: const Offset(0, 10),
             ),
@@ -313,13 +314,13 @@ class _MainScreenState extends State<MainScreen> {
             child: Container(
               decoration: BoxDecoration(
                 color: isDark 
-                    ? Colors.black.withOpacity(0.8) 
-                    : Colors.white.withOpacity(0.9),
+                    ? Colors.black.withValues(alpha: 0.8) 
+                    : Colors.white.withValues(alpha: 0.9),
                 borderRadius: BorderRadius.circular(24),
                 border: Border.all(
                   color: isDark 
-                      ? Colors.white.withOpacity(0.1) 
-                      : Colors.grey.withOpacity(0.2),
+                      ? Colors.white.withValues(alpha: 0.1) 
+                      : Colors.grey.withValues(alpha: 0.2),
                 ),
               ),
               child: NavigationBar(
@@ -331,7 +332,7 @@ class _MainScreenState extends State<MainScreen> {
                 },
                 backgroundColor: Colors.transparent,
                 elevation: 0,
-                indicatorColor: Theme.of(context).colorScheme.primary.withOpacity(0.2),
+                indicatorColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
                 labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
                 destinations: [
                   NavigationDestination(
@@ -450,7 +451,7 @@ class _LaneDetectionScreenState extends State<LaneDetectionScreen> {
     final startTime = DateTime.now();
 
     try {
-      final result = await Future(() => LaneDetection.detectLanes(image)).timeout(
+      final result = await LaneDetection.detectLanes(image).timeout(
         const Duration(seconds: 1),
         onTimeout: () => LaneDetectionResult(lanesDetected: false),
       );
@@ -556,7 +557,7 @@ class _LaneDetectionScreenState extends State<LaneDetectionScreen> {
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.2),
+                color: Colors.white.withValues(alpha: 0.2),
                 shape: BoxShape.circle,
               ),
               child: const CircularProgressIndicator(
@@ -600,7 +601,7 @@ class _LaneDetectionScreenState extends State<LaneDetectionScreen> {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.2),
+            color: Colors.black.withValues(alpha: 0.2),
             blurRadius: 20,
             offset: const Offset(0, 10),
           ),
@@ -614,13 +615,13 @@ class _LaneDetectionScreenState extends State<LaneDetectionScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
               color: isDark 
-                  ? Colors.black.withOpacity(0.6) 
-                  : Colors.white.withOpacity(0.3),
+                  ? Colors.black.withValues(alpha: 0.6) 
+                  : Colors.white.withValues(alpha: 0.3),
               borderRadius: BorderRadius.circular(20),
               border: Border.all(
                 color: isDark 
-                    ? Colors.white.withOpacity(0.1) 
-                    : Colors.white.withOpacity(0.5),
+                    ? Colors.white.withValues(alpha: 0.1) 
+                    : Colors.white.withValues(alpha: 0.5),
               ),
             ),
             child: SafeArea(
@@ -668,8 +669,8 @@ class _LaneDetectionScreenState extends State<LaneDetectionScreen> {
     return Container(
       decoration: BoxDecoration(
         color: isDark 
-            ? Colors.white.withOpacity(0.1) 
-            : Colors.white.withOpacity(0.5),
+            ? Colors.white.withValues(alpha: 0.1) 
+            : Colors.white.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(12),
       ),
       child: IconButton(
@@ -683,9 +684,9 @@ class _LaneDetectionScreenState extends State<LaneDetectionScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.2),
+        color: color.withValues(alpha: 0.2),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.5)),
+        border: Border.all(color: color.withValues(alpha: 0.5)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -693,7 +694,7 @@ class _LaneDetectionScreenState extends State<LaneDetectionScreen> {
           Text(
             label,
             style: TextStyle(
-              color: Colors.white.withOpacity(0.7),
+              color: Colors.white.withValues(alpha: 0.7),
               fontSize: 10,
               fontWeight: FontWeight.w500,
             ),
@@ -719,7 +720,7 @@ class _LaneDetectionScreenState extends State<LaneDetectionScreen> {
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.3),
+            color: Colors.black.withValues(alpha: 0.3),
             blurRadius: 30,
             offset: const Offset(0, -10),
           ),
@@ -737,19 +738,19 @@ class _LaneDetectionScreenState extends State<LaneDetectionScreen> {
                 end: Alignment.bottomCenter,
                 colors: isDark
                     ? [
-                        Colors.black.withOpacity(0.8),
-                        Colors.black.withOpacity(0.6),
+                        Colors.black.withValues(alpha: 0.8),
+                        Colors.black.withValues(alpha: 0.6),
                       ]
                     : [
-                        Colors.white.withOpacity(0.4),
-                        Colors.white.withOpacity(0.2),
+                        Colors.white.withValues(alpha: 0.4),
+                        Colors.white.withValues(alpha: 0.2),
                       ],
               ),
               borderRadius: BorderRadius.circular(24),
               border: Border.all(
                 color: isDark 
-                    ? Colors.white.withOpacity(0.1) 
-                    : Colors.white.withOpacity(0.5),
+                    ? Colors.white.withValues(alpha: 0.1) 
+                    : Colors.white.withValues(alpha: 0.5),
               ),
             ),
             child: SafeArea(
@@ -819,8 +820,8 @@ class _LaneDetectionScreenState extends State<LaneDetectionScreen> {
       icon: icon,
       message: message,
       color: color,
-      borderColor: color.withOpacity(0.6),
-      backgroundColor: color.withOpacity(0.15),
+      borderColor: color.withValues(alpha: 0.6),
+      backgroundColor: color.withValues(alpha: 0.15),
     );
   }
 
@@ -865,8 +866,8 @@ class _LaneDetectionScreenState extends State<LaneDetectionScreen> {
       icon: icon,
       message: message,
       color: color,
-      borderColor: color.withOpacity(0.6),
-      backgroundColor: color.withOpacity(0.15),
+      borderColor: color.withValues(alpha: 0.6),
+      backgroundColor: color.withValues(alpha: 0.15),
     );
   }
 
@@ -875,8 +876,8 @@ class _LaneDetectionScreenState extends State<LaneDetectionScreen> {
       icon: Icons.check_circle,
       message: '✓ Lanes Detected: Yes',
       color: Colors.green,
-      borderColor: Colors.green.withOpacity(0.6),
-      backgroundColor: Colors.green.withOpacity(0.15),
+      borderColor: Colors.green.withValues(alpha: 0.6),
+      backgroundColor: Colors.green.withValues(alpha: 0.15),
     );
   }
 
@@ -961,7 +962,7 @@ class LaneOverlayPainter extends CustomPainter {
       ..strokeCap = StrokeCap.round;
 
     final glowPaint = Paint()
-      ..color = color.withOpacity(0.5)
+      ..color = color.withValues(alpha: 0.5)
       ..strokeWidth = 12.0
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round
@@ -996,7 +997,7 @@ class LaneOverlayPainter extends CustomPainter {
 
   void _drawLaneArea(Canvas canvas, Size size, LaneLine leftLane, LaneLine rightLane) {
     final areaPaint = Paint()
-      ..color = Colors.cyan.withOpacity(0.2)
+      ..color = Colors.cyan.withValues(alpha: 0.2)
       ..style = PaintingStyle.fill;
 
     final height = size.height;

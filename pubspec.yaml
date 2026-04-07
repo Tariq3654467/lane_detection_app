@@ -19,7 +19,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.9.2
+  sdk: '>=3.4.0 <4.0.0'
 
 # Dependencies specify other packages that your package needs in order to work.
 # To automatically upgrade your package dependencies to the latest versions
@@ -41,7 +41,7 @@ dependencies:
   collection: ^1.18.0 # For advanced collection operations
   google_fonts: ^6.2.1 # For modern typography
   fl_chart: ^0.69.0 # For improved charts
-  tflite_flutter: ^0.10.4 # For TFLite model inference
+  tflite_flutter: ^0.12.1 # For TFLite model inference
 
 dev_dependencies:
   flutter_test:
